@@ -17,14 +17,23 @@ app.use(express.json());
 // Store game sessions
 let games = {};
 
+// TODO: make state for player turens strategy
+
 io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
+
+  const userId = socket.id;
 
   // Create a new game
   socket.on("create-game", (gameId) => {
     if (!games[gameId]) {
-      games[gameId] = { players: [socket.id], turns: [] };
+      games[gameId] = {
+        players: [socket.id],
+        turns: [],
+        currentTurn: socket.id,
+      };
       socket.join(gameId);
+      io.to(gameId).emit("update-game", games[gameId]);
       console.log(`Game ${gameId} created by ${socket.id}`);
     }
   });
@@ -41,10 +50,28 @@ io.on("connection", (socket) => {
 
   // Handle turn-taking
   socket.on("play-turn", ({ gameId, move }) => {
-    if (games[gameId]) {
-      games[gameId].turns.push(move);
-      io.to(gameId).emit("update-game", games[gameId]); // Send updated game state
-      console.log(`Turn played in game ${gameId}:`, move);
+    const game = games[gameId];
+    if (game && socket.id === game.currentTurn) {
+      game.turns.push(move);
+
+      game.currentTurn = game.players.find((p) => p !== socket.id);
+
+      function pick() {
+        if (!game.pickedHeroes) {
+          game.pickedHeroes = {};
+        }
+
+        if (game.pickedHeroes[userId]) {
+          game.pickedHeroes[userId].push(move.hero);
+        } else {
+          game.pickedHeroes[userId] = [move.hero];
+        }
+      }
+
+      pick();
+
+      io.to(gameId).emit("update-game", game);
+      console.log(`Turn played by ${socket.id} in game ${gameId}:`, move);
     }
   });
 
